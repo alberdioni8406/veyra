@@ -612,30 +612,31 @@ async def health():
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 @app.get("/room/{room_id}", response_class=HTMLResponse)
 async def room_page(request: Request, room_id: int):
-    return templates.TemplateResponse("room.html", {"request": request, "room_id": room_id})
+    return templates.TemplateResponse(request, "room.html", {"room_id": room_id})
 
 @app.get("/rent", response_class=HTMLResponse)
 async def rent_page(request: Request):
-    return templates.TemplateResponse("rent.html", {
-        "request": request, "categories": CATEGORIES,
-        "durations": DURATION_OPTIONS, "capacities": CAPACITY_OPTIONS
+    return templates.TemplateResponse(request, "rent.html", {
+        "categories": CATEGORIES,
+        "durations": DURATION_OPTIONS,
+        "capacities": CAPACITY_OPTIONS,
     })
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse(request, "admin.html")
 
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
-    return templates.TemplateResponse("profile.html", {"request": request})
+    return templates.TemplateResponse(request, "profile.html")
 
 if __name__ == "__main__":
     import uvicorn
