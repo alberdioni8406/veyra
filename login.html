@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Login — Multiverse{% endblock %}
+{% block content %}
+<div class="max-w-sm mx-auto mt-8">
+  <h1 class="text-xl font-bold mb-6 text-center">Enter the Multiverse</h1>
+  <div class="flex gap-2 mb-6">
+    <button id="tab-login" class="flex-1 py-2 text-sm font-medium border-b-2 border-neon text-neon">Login</button>
+    <button id="tab-register" class="flex-1 py-2 text-sm font-medium border-b-2 border-transparent text-muted">Register</button>
+  </div>
+  <form id="auth-form" class="space-y-4">
+    <div>
+      <label class="block text-xs text-muted mb-1">Username</label>
+      <input name="username" required minlength="3" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neon/50">
+    </div>
+    <div>
+      <label class="block text-xs text-muted mb-1">Password</label>
+      <input name="password" type="password" required minlength="6" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neon/50">
+    </div>
+    <div id="reg-fields" class="hidden space-y-4">
+      <div>
+        <label class="block text-xs text-muted mb-1">Display name</label>
+        <input name="display_name" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+      </div>
+    </div>
+    <button type="submit" class="w-full btn-neon py-2.5 rounded-lg text-neon font-semibold text-sm">Continue</button>
+    <p id="auth-error" class="text-center text-red-400 text-xs"></p>
+  </form>
+  <p class="text-center text-muted text-xs mt-6">Default admin: admin / admin123</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let mode = 'login';
+document.getElementById('tab-login').onclick = () => {
+  mode = 'login';
+  document.getElementById('tab-login').className = 'flex-1 py-2 text-sm font-medium border-b-2 border-neon text-neon';
+  document.getElementById('tab-register').className = 'flex-1 py-2 text-sm font-medium border-b-2 border-transparent text-muted';
+  document.getElementById('reg-fields').classList.add('hidden');
+};
+document.getElementById('tab-register').onclick = () => {
+  mode = 'register';
+  document.getElementById('tab-register').className = 'flex-1 py-2 text-sm font-medium border-b-2 border-neon text-neon';
+  document.getElementById('tab-login').className = 'flex-1 py-2 text-sm font-medium border-b-2 border-transparent text-muted';
+  document.getElementById('reg-fields').classList.remove('hidden');
+};
+document.getElementById('auth-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = { username: fd.get('username'), password: fd.get('password') };
+  if (mode === 'register') body.display_name = fd.get('display_name') || body.username;
+  const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+  try {
+    const res = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    setAuth(res.access_token, res.user);
+    const next = new URLSearchParams(location.search).get('next') || '/';
+    location.href = next;
+  } catch (err) {
+    document.getElementById('auth-error').textContent = err.message;
+  }
+};
+</script>
+{% endblock %}

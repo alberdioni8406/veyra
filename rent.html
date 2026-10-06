@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Rent a Space — Multiverse{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <h1 class="text-2xl font-bold mb-1">Rent a Space</h1>
+  <p class="text-muted text-sm mb-6">Create a temporary room. You pay the rental. You can charge entry.</p>
+
+  <form id="rent-form" class="space-y-4">
+    <div>
+      <label class="block text-xs text-muted mb-1">Room name</label>
+      <input name="name" required maxlength="200" placeholder="Mozambique Business Hub"
+        class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neon/50">
+    </div>
+    <div>
+      <label class="block text-xs text-muted mb-1">Description</label>
+      <textarea name="description" rows="2" placeholder="What happens inside..."
+        class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neon/50"></textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-muted mb-1">Category</label>
+        <select name="category" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+          {% for c in categories %}<option value="{{c}}">{{c}}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Type</label>
+        <select name="type" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+          <option value="text">Text</option>
+          <option value="voice" disabled>Voice (soon)</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-muted mb-1">Duration</label>
+        <select name="duration_minutes" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+          {% for d in durations %}
+          <option value="{{d}}">{% if d < 60 %}{{d}} min{% elif d < 1440 %}{{d//60}} hour{% if d > 60 %}s{% endif %}{% else %}{{d//1440}} day{% if d > 1440 %}s{% endif %}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Capacity</label>
+        <select name="capacity" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+          {% for c in capacities %}<option value="{{c}}" {% if c==50 %}selected{% endif %}>{{c}}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-muted mb-1">Entry price (BCH)</label>
+        <input name="entry_price" type="number" step="0.0001" min="0" value="0"
+          class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-neon/50">
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Visibility</label>
+        <select name="visibility" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs text-muted mb-1">Language</label>
+      <select name="language" class="w-full bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm">
+        <option value="en">English</option>
+        <option value="pt">Portuguese</option>
+        <option value="zh">Chinese</option>
+        <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="ar">Arabic</option>
+      </select>
+    </div>
+    <button type="submit" class="w-full btn-neon py-3 rounded-lg text-neon font-semibold text-sm mt-2">
+      Continue to Payment
+    </button>
+  </form>
+
+  <div id="payment-panel" class="hidden mt-8 p-5 bg-panel border border-neon/20 rounded-xl">
+    <h2 class="font-semibold text-neon mb-3">Payment Required</h2>
+    <p class="text-sm text-gray-300 mb-4">Send the exact amount to activate your room.</p>
+    <div class="space-y-2 font-mono text-sm">
+      <div class="flex justify-between"><span class="text-muted">Amount</span><span id="pay-amount" class="text-neon"></span></div>
+      <div class="flex justify-between gap-2"><span class="text-muted shrink-0">Address</span><span id="pay-address" class="text-right break-all text-xs"></span></div>
+      <div class="flex justify-between"><span class="text-muted">Memo</span><span id="pay-memo" class="text-xs text-gray-400"></span></div>
+    </div>
+    <button id="verify-btn" class="w-full mt-5 btn-pink py-2.5 rounded-lg text-neonpink font-medium text-sm">
+      I've sent the payment — Verify
+    </button>
+    <p id="pay-status" class="text-center text-xs text-muted mt-3"></p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const form = document.getElementById('rent-form');
+let currentPaymentId = null;
+let currentRoomId = null;
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!getToken()) { location.href = '/login?next=/rent'; return; }
+  const fd = new FormData(form);
+  const body = {
+    name: fd.get('name'),
+    description: fd.get('description') || null,
+    category: fd.get('category'),
+    type: fd.get('type'),
+    capacity: parseInt(fd.get('capacity')),
+    entry_price: parseFloat(fd.get('entry_price')) || 0,
+    duration_minutes: parseInt(fd.get('duration_minutes')),
+    visibility: fd.get('visibility'),
+    language: fd.get('language'),
+  };
+  try {
+    const res = await api('/api/rooms/rent', { method: 'POST', body: JSON.stringify(body) });
+    currentPaymentId = res.payment.id;
+    currentRoomId = res.room.id;
+    document.getElementById('pay-amount').textContent = fmtBch(res.payment.amount);
+    document.getElementById('pay-address').textContent = res.payment.address;
+    document.getElementById('pay-memo').textContent = res.payment.memo || '—';
+    document.getElementById('payment-panel').classList.remove('hidden');
+    form.classList.add('opacity-50', 'pointer-events-none');
+    document.getElementById('pay-status').textContent = 'Waiting for payment... (test mode auto-confirms)';
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+document.getElementById('verify-btn').addEventListener('click', async () => {
+  if (!currentPaymentId) return;
+  const status = document.getElementById('pay-status');
+  status.textContent = 'Verifying...';
+  try {
+    const res = await api('/api/payments/' + currentPaymentId + '/verify', { method: 'POST' });
+    if (res.status === 'confirmed' || res.status === 'already_confirmed') {
+      status.textContent = 'Payment confirmed! Room is live.';
+      status.classList.add('text-neon');
+      setTimeout(() => location.href = '/room/' + currentRoomId, 1200);
+    } else {
+      status.textContent = 'Still pending: ' + (res.error || 'Try again in a few seconds');
+    }
+  } catch (err) {
+    status.textContent = err.message;
+  }
+});
+</script>
+{% endblock %}

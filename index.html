@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Multiverse — Live Spaces{% endblock %}
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-2xl sm:text-3xl font-bold tracking-tight mb-1">The Multiverse</h1>
+  <p class="text-muted text-sm">Temporary social spaces. Rent. Enter. Connect.</p>
+</div>
+
+<div class="flex flex-wrap gap-2 mb-6 text-xs">
+  <button onclick="loadRooms()" class="btn-neon px-3 py-1.5 rounded font-medium text-neon">All Live</button>
+  <button onclick="loadRooms({sort:'ending'})" class="px-3 py-1.5 rounded border border-white/10 text-gray-400 hover:text-white">Ending Soon</button>
+  <button onclick="loadRooms({free_only:true})" class="px-3 py-1.5 rounded border border-white/10 text-gray-400 hover:text-white">Free</button>
+  <select id="cat-filter" onchange="loadRooms({category:this.value||null})" class="bg-panel border border-white/10 rounded px-2 py-1.5 text-gray-300">
+    <option value="">Category</option>
+    <option>Business</option><option>Football</option><option>Gaming</option>
+    <option>Crypto</option><option>Culture</option><option>Music</option>
+    <option>Entertainment</option><option>Dating</option><option>Education</option>
+    <option>Technology</option><option>Local</option><option>Other</option>
+  </select>
+</div>
+
+<div id="rooms" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+  <div class="col-span-full text-center text-muted py-12">Loading live spaces...</div>
+</div>
+
+<div class="mt-10 text-center">
+  <a href="/rent" class="btn-pink inline-flex items-center gap-2 px-6 py-3 rounded-lg text-neonpink font-semibold text-sm">
+    + Rent a Space
+  </a>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadRooms(params = {}) {
+  const q = new URLSearchParams();
+  if (params.category) q.set('category', params.category);
+  if (params.sort) q.set('sort', params.sort);
+  if (params.free_only) q.set('free_only', 'true');
+  const el = document.getElementById('rooms');
+  el.innerHTML = '<div class="col-span-full text-center text-muted py-12">Loading...</div>';
+  try {
+    const rooms = await api('/api/rooms/live?' + q.toString());
+    if (!rooms.length) {
+      el.innerHTML = '<div class="col-span-full text-center text-muted py-16"><p class="mb-4">No live rooms right now.</p><a href="/rent" class="text-neon underline">Be the first to rent a space</a></div>';
+      return;
+    }
+    el.innerHTML = rooms.map(r => `
+      <a href="/room/${r.id}" class="block bg-panel border border-white/5 rounded-xl p-4 card-glow transition hover:border-neon/30">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h3 class="font-semibold text-sm leading-tight line-clamp-2">${esc(r.name)}</h3>
+          <span class="shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-neon/10 text-neon font-mono">${r.status}</span>
+        </div>
+        <p class="text-xs text-muted mb-3 line-clamp-2">${esc(r.description || r.category)}</p>
+        <div class="flex items-center justify-between text-xs font-mono text-gray-400">
+          <span>${r.participant_count} / ${r.capacity}</span>
+          <span class="text-neon">${r.entry_price > 0 ? fmtBch(r.entry_price) : 'FREE'}</span>
+        </div>
+        <div class="mt-2 flex items-center justify-between text-[11px] text-muted">
+          <span>${esc(r.category)} · @${esc(r.host_username || '?')}</span>
+          <span class="countdown text-neonpink">${fmtTime(r.time_remaining_seconds)} left</span>
+        </div>
+      </a>
+    `).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="col-span-full text-center text-red-400 py-12">${e.message}</div>`;
+  }
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+loadRooms();
+setInterval(() => loadRooms({category: document.getElementById('cat-filter').value || null}), 30000);
+</script>
+{% endblock %}

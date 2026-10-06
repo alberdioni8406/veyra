@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Profile — Multiverse{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto">
+  <h1 class="text-xl font-bold mb-6">Your Profile</h1>
+  <div id="profile" class="bg-panel border border-white/5 rounded-xl p-5 mb-6">
+    <p class="text-muted text-sm">Loading...</p>
+  </div>
+  <h2 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Connections</h2>
+  <div id="connections" class="space-y-2 text-sm"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function load() {
+  if (!getToken()) { location.href = '/login?next=/profile'; return; }
+  try {
+    const u = await api('/api/me');
+    document.getElementById('profile').innerHTML = `
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 rounded-full bg-neon/20 flex items-center justify-center text-neon font-mono text-lg">${(u.display_name||u.username)[0].toUpperCase()}</div>
+        <div>
+          <div class="font-semibold">@${u.username}</div>
+          <div class="text-sm text-muted">${u.display_name || ''}</div>
+        </div>
+      </div>
+      <p class="text-sm text-gray-300 mb-2">${u.bio || 'No bio yet.'}</p>
+      <div class="text-xs text-muted font-mono">${u.country || '—'} · ${u.language}</div>
+    `;
+    const conns = await api('/api/connections');
+    document.getElementById('connections').innerHTML = conns.length
+      ? conns.map(c => `<div class="bg-panel border border-white/5 rounded-lg px-3 py-2 flex justify-between">
+          <span>@${c.username}</span>
+          <span class="text-muted text-xs">${new Date(c.created_at).toLocaleDateString()}</span>
+        </div>`).join('')
+      : '<p class="text-muted">No connections yet. Meet people inside rooms.</p>';
+  } catch (e) { alert(e.message); }
+}
+load();
+</script>
+{% endblock %}

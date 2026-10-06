@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Room — Multiverse{% endblock %}
+{% block content %}
+<div id="room-app" class="flex flex-col h-[calc(100vh-3.5rem-3rem)] max-h-[900px]">
+  <div id="room-header" class="shrink-0 border-b border-white/5 pb-3 mb-3">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h1 id="room-name" class="text-lg font-semibold">Loading...</h1>
+        <p id="room-meta" class="text-xs text-muted mt-0.5"></p>
+      </div>
+      <div class="text-right shrink-0">
+        <div id="room-countdown" class="font-mono text-neonpink text-sm countdown">--:--</div>
+        <div id="room-capacity" class="text-xs text-muted mt-0.5"></div>
+      </div>
+    </div>
+    <div id="room-actions" class="flex flex-wrap gap-2 mt-3"></div>
+  </div>
+
+  <div id="join-panel" class="hidden flex-1 flex items-center justify-center">
+    <div class="text-center max-w-sm">
+      <p id="join-msg" class="text-muted mb-4"></p>
+      <button id="join-btn" class="btn-neon px-6 py-2.5 rounded-lg text-neon font-medium">Enter Room</button>
+      <div id="entry-pay" class="hidden mt-6 p-4 bg-panel border border-white/10 rounded-xl text-left text-sm">
+        <p class="text-muted mb-2">Entry fee required</p>
+        <div class="font-mono space-y-1">
+          <div>Amount: <span id="entry-amount" class="text-neon"></span></div>
+          <div class="break-all">Address: <span id="entry-address" class="text-xs"></span></div>
+        </div>
+        <button id="entry-verify" class="w-full mt-3 btn-pink py-2 rounded text-neonpink text-sm">Verify Payment</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="chat-panel" class="hidden flex-1 flex flex-col min-h-0">
+    <div id="messages" class="flex-1 overflow-y-auto space-y-2 pr-1 text-sm"></div>
+    <form id="msg-form" class="shrink-0 flex gap-2 pt-3 border-t border-white/5 mt-2">
+      <input id="msg-input" autocomplete="off" placeholder="Message..." maxlength="2000"
+        class="flex-1 bg-panel border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neon/40">
+      <button type="submit" class="btn-neon px-4 rounded-lg text-neon text-sm font-medium">Send</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const roomId = {{ room_id }};
+let roomData = null;
+let entryPaymentId = null;
+let ws = null;
+let countdownTimer = null;
+
+async function loadRoom() {
+  try {
+    roomData = await api('/api/rooms/' + roomId);
+    document.getElementById('room-name').textContent = roomData.name;
+    document.getElementById('room-meta').textContent = `${roomData.category} · @${roomData.host_username || '?'} · ${roomData.language}`;
+    document.getElementById('room-capacity').textContent = `${roomData.participant_count} / ${roomData.capacity}`;
+    startCountdown(roomData.time_remaining_seconds);
+
+    const actions = document.getElementById('room-actions');
+    actions.innerHTML = '';
+    if (roomData.is_host) {
+      actions.innerHTML += `<button onclick="closeRoom()" class="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400">Close Room</button>`;
+      actions.innerHTML += `<a href="#dashboard" onclick="showDashboard()" class="text-xs px-2 py-1 rounded border border-white/10 text-gray-400">Dashboard</a>`;
+    }
+    if (roomData.is_participant || roomData.is_host) {
+      showChat();
+    } else {
+      showJoin();
+    }
+  } catch (e) {
+    document.getElementById('room-name').textContent = 'Error';
+    document.getElementById('room-meta').textContent = e.message;
+  }
+}
+
+function startCountdown(sec) {
+  if (countdownTimer) clearInterval(countdownTimer);
+  let s = sec || 0;
+  const el = document.getElementById('room-countdown');
+  const tick = () => {
+    el.textContent = fmtTime(s) + ' left';
+    if (s <= 0) { clearInterval(countdownTimer); el.textContent = 'ENDED'; return; }
+    s--;
+  };
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+function showJoin() {
+  document.getElementById('join-panel').classList.remove('hidden');
+  document.getElementById('chat-panel').classList.add('hidden');
+  const msg = document.getElementById('join-msg');
+  if (roomData.entry_price > 0) {
+    msg.textContent = `Entry: ${fmtBch(roomData.entry_price)}. Capacity ${roomData.participant_count}/${roomData.capacity}.`;
+  } else {
+    msg.textContent = 'This room is free to enter.';
+  }
+}
+
+function showChat() {
+  document.getElementById('join-panel').classList.add('hidden');
+  document.getElementById('chat-panel').classList.remove('hidden');
+  loadMessages();
+  connectWs();
+}
+
+document.getElementById('join-btn').addEventListener('click', async () => {
+  if (!getToken()) { location.href = '/login?next=/room/' + roomId; return; }
+  try {
+    const res = await api('/api/rooms/' + roomId + '/join', { method: 'POST' });
+    if (res.status === 'joined' || res.status === 'already_joined') {
+      roomData = res.room || roomData;
+      roomData.is_participant = true;
+      showChat();
+    } else if (res.status === 'payment_required') {
+      entryPaymentId = res.payment.id;
+      document.getElementById('entry-pay').classList.remove('hidden');
+      document.getElementById('entry-amount').textContent = fmtBch(res.payment.amount);
+      document.getElementById('entry-address').textContent = res.payment.address;
+      document.getElementById('join-btn').classList.add('hidden');
+    }
+  } catch (e) { alert(e.message); }
+});
+
+document.getElementById('entry-verify').addEventListener('click', async () => {
+  try {
+    await api('/api/payments/' + entryPaymentId + '/verify', { method: 'POST' });
+    const res = await api('/api/rooms/' + roomId + '/confirm-entry?payment_id=' + entryPaymentId, { method: 'POST' });
+    // note: confirm-entry expects payment_id as query in this impl? Wait, fix in call
+  } catch(e) {}
+  // Correct call:
+  try {
+    const res = await api('/api/rooms/' + roomId + '/confirm-entry?payment_id=' + entryPaymentId, { method: 'POST' });
+    if (res.status === 'joined') {
+      roomData.is_participant = true;
+      showChat();
+    }
+  } catch (e) { alert(e.message); }
+});
+
+// Fix: confirm-entry uses query param in path? Looking at code: payment_id as arg, so query is fine if FastAPI accepts.
+// In main: async def confirm_entry(room_id: int, payment_id: int ... so yes query or body. Query works.
+
+async function loadMessages() {
+  try {
+    const msgs = await api('/api/rooms/' + roomId + '/messages');
+    const el = document.getElementById('messages');
+    el.innerHTML = msgs.map(m => renderMsg(m)).join('');
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {}
+}
+
+function renderMsg(m) {
+  const time = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  return `<div class="flex gap-2">
+    <span class="text-neon font-mono text-xs shrink-0 w-20 truncate">@${esc(m.username)}</span>
+    <span class="flex-1 break-words">${esc(m.content)}</span>
+    <span class="text-[10px] text-muted shrink-0">${time}</span>
+  </div>`;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+document.getElementById('msg-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('msg-input');
+  const content = input.value.trim();
+  if (!content) return;
+  input.value = '';
+  try {
+    await api('/api/rooms/' + roomId + '/messages', { method: 'POST', body: JSON.stringify({ content }) });
+  } catch (err) { alert(err.message); }
+});
+
+function connectWs() {
+  const token = getToken();
+  if (!token) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/rooms/${roomId}?token=${token}`);
+  ws.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    if (data.type === 'message') {
+      const el = document.getElementById('messages');
+      el.insertAdjacentHTML('beforeend', renderMsg(data));
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+  ws.onclose = () => { setTimeout(connectWs, 3000); };
+}
+
+async function closeRoom() {
+  if (!confirm('Close this room for everyone?')) return;
+  await api('/api/rooms/' + roomId + '/close', { method: 'POST' });
+  location.href = '/';
+}
+
+async function showDashboard() {
+  try {
+    const d = await api('/api/rooms/' + roomId + '/dashboard');
+    alert(`Participants: ${d.participants.length}\nRevenue: ${fmtBch(d.revenue)}\nMessages: ${d.messages}`);
+  } catch (e) { alert(e.message); }
+}
+
+loadRoom();
+</script>
+{% endblock %}

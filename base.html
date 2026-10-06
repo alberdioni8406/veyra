@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>{% block title %}Multiverse{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            void: '#0a0a0f',
+            panel: '#12121a',
+            neon: '#00f0ff',
+            neonpink: '#ff00aa',
+            neonpurple: '#b14eff',
+            muted: '#6b7280',
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { background: #0a0a0f; color: #e5e7eb; font-family: Inter, system-ui, sans-serif; }
+    .neon-text { text-shadow: 0 0 8px rgba(0,240,255,0.6); }
+    .neon-border { box-shadow: 0 0 0 1px rgba(0,240,255,0.3), 0 0 12px rgba(0,240,255,0.1); }
+    .card-glow:hover { box-shadow: 0 0 20px rgba(0,240,255,0.15); }
+    .btn-neon { background: linear-gradient(135deg, #00f0ff22, #b14eff22); border: 1px solid #00f0ff55; }
+    .btn-neon:hover { background: linear-gradient(135deg, #00f0ff44, #b14eff44); border-color: #00f0ff; }
+    .btn-pink { background: linear-gradient(135deg, #ff00aa22, #b14eff22); border: 1px solid #ff00aa55; }
+    .btn-pink:hover { border-color: #ff00aa; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #12121a; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    .countdown { font-variant-numeric: tabular-nums; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-void text-gray-100">
+  <nav class="sticky top-0 z-50 border-b border-white/5 bg-void/90 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="/" class="font-mono font-semibold text-neon tracking-wider neon-text text-lg">MULTIVERSE</a>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="/" class="text-gray-400 hover:text-neon transition">Discover</a>
+        <a href="/rent" class="text-gray-400 hover:text-neon transition">Rent</a>
+        <a href="/profile" class="text-gray-400 hover:text-neon transition hidden sm:inline">Profile</a>
+        <a href="/admin" class="text-gray-400 hover:text-neonpink transition hidden sm:inline">Admin</a>
+        <span id="nav-user" class="text-muted font-mono text-xs"></span>
+        <a href="/login" id="nav-login" class="btn-neon px-3 py-1 rounded text-neon text-xs font-medium">Login</a>
+      </div>
+    </div>
+  </nav>
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    const TOKEN_KEY = 'mv_token';
+    const USER_KEY = 'mv_user';
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function getUser() { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; } }
+    function setAuth(token, user) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      updateNav();
+    }
+    function logout() {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      updateNav();
+      location.href = '/';
+    }
+    function updateNav() {
+      const u = getUser();
+      const el = document.getElementById('nav-user');
+      const login = document.getElementById('nav-login');
+      if (u) {
+        el.textContent = '@' + u.username;
+        login.textContent = 'Logout';
+        login.onclick = (e) => { e.preventDefault(); logout(); };
+        login.href = '#';
+      } else {
+        el.textContent = '';
+        login.textContent = 'Login';
+        login.onclick = null;
+        login.href = '/login';
+      }
+    }
+    async function api(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      const t = getToken();
+      if (t) headers['Authorization'] = 'Bearer ' + t;
+      const res = await fetch(path, { ...opts, headers });
+      if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
+      return data;
+    }
+    function fmtTime(sec) {
+      if (sec == null) return '--';
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}:${String(s).padStart(2,'0')}`;
+    }
+    function fmtBch(v) { return Number(v).toFixed(6) + ' BCH'; }
+    updateNav();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

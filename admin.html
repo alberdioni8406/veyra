@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Admin — Multiverse{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-xl font-bold">Platform Dashboard</h1>
+  <p class="text-muted text-sm">Economic & infrastructure overview</p>
+</div>
+<div id="stats" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Live Rooms</div><div id="s-live" class="text-xl font-mono text-neon">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Total Rooms</div><div id="s-total" class="text-xl font-mono">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">BCH Volume</div><div id="s-vol" class="text-xl font-mono text-neonpink">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Active Users</div><div id="s-users" class="text-xl font-mono">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Participants</div><div id="s-parts" class="text-xl font-mono">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Confirmed Pays</div><div id="s-conf" class="text-xl font-mono">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Pending Pays</div><div id="s-pend" class="text-xl font-mono text-yellow-400">—</div></div>
+  <div class="bg-panel border border-white/5 rounded-lg p-3"><div class="text-xs text-muted">Platform Rev</div><div id="s-rev" class="text-xl font-mono">—</div></div>
+</div>
+<h2 class="text-sm font-semibold mb-3 text-muted uppercase tracking-wider">Recent Rooms</h2>
+<div id="rooms-list" class="space-y-2 text-sm"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function load() {
+  if (!getToken()) { location.href = '/login?next=/admin'; return; }
+  try {
+    const s = await api('/api/admin/stats');
+    document.getElementById('s-live').textContent = s.live_rooms;
+    document.getElementById('s-total').textContent = s.total_rooms;
+    document.getElementById('s-vol').textContent = Number(s.bch_volume).toFixed(4);
+    document.getElementById('s-users').textContent = s.active_users;
+    document.getElementById('s-parts').textContent = s.total_participants;
+    document.getElementById('s-conf').textContent = s.confirmed_payments;
+    document.getElementById('s-pend').textContent = s.pending_payments;
+    document.getElementById('s-rev').textContent = Number(s.platform_revenue).toFixed(4);
+    const rooms = await api('/api/admin/rooms');
+    document.getElementById('rooms-list').innerHTML = rooms.map(r => `
+      <div class="flex items-center justify-between bg-panel border border-white/5 rounded-lg px-3 py-2">
+        <div>
+          <a href="/room/${r.id}" class="text-neon hover:underline">${esc(r.name)}</a>
+          <span class="text-muted text-xs ml-2">${r.status} · ${r.participant_count}/${r.capacity}</span>
+        </div>
+        <span class="font-mono text-xs text-muted">${fmtBch(r.rental_price)}</span>
+      </div>
+    `).join('') || '<p class="text-muted">No rooms yet</p>';
+  } catch (e) {
+    if (e.message.includes('Admin') || e.message.includes('403')) {
+      document.getElementById('stats').innerHTML = '<p class="text-red-400 col-span-full">Admin access required. Login as admin.</p>';
+    } else {
+      alert(e.message);
+    }
+  }
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+load();
+</script>
+{% endblock %}
