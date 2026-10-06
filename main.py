@@ -1,6 +1,7 @@
 """
-MULTIVERSE V0 - Rentable Social Spaces
+VEYRA V0 - Rentable Social Spaces
 Economic layer for human connection. BCH payments.
+Optimized for serverless (Vercel) + external Postgres.
 """
 import os
 import secrets
@@ -38,16 +39,17 @@ async def lifespan(app: FastAPI):
     db = next(get_db())
     try:
         if db.query(User).count() == 0:
+            admin_password = os.getenv("ADMIN_PASSWORD", "change-me-now")
             admin = User(
-                username="admin",
-                hashed_password=get_password_hash("admin123"),
+                username=os.getenv("ADMIN_USERNAME", "admin"),
+                hashed_password=get_password_hash(admin_password),
                 display_name="Platform Admin",
                 is_admin=True,
                 language="en"
             )
             db.add(admin)
             db.commit()
-            print("Seeded admin: admin / admin123")
+            print("Seeded admin user (change ADMIN_PASSWORD in production)")
         if db.query(PlatformConfig).count() == 0:
             for k, v in [
                 ("PLATFORM_ROOM_FEE_PERCENT", str(economic_config.PLATFORM_ROOM_FEE_PERCENT)),
@@ -59,9 +61,11 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-app = FastAPI(title="Multiverse", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Veyra", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.mount("/static", StaticFiles(directory="static"), name="static")
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory="templates")
 
 class ConnectionManager:
