@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "multiverse-dev-secret-change-in-production-32chars")
+SECRET_KEY = os.getenv("SECRET_KEY", "veyra-dev-secret-change-in-production-32chars")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

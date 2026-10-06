@@ -35,30 +35,35 @@ from config import economic_config, DURATION_OPTIONS, CAPACITY_OPTIONS, CATEGORI
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    db = next(get_db())
+    # On Vercel, never crash the whole function if DB is temporarily unavailable
     try:
-        if db.query(User).count() == 0:
-            admin_password = os.getenv("ADMIN_PASSWORD", "change-me-now")
-            admin = User(
-                username=os.getenv("ADMIN_USERNAME", "admin"),
-                hashed_password=get_password_hash(admin_password),
-                display_name="Platform Admin",
-                is_admin=True,
-                language="en"
-            )
-            db.add(admin)
-            db.commit()
-            print("Seeded admin user (change ADMIN_PASSWORD in production)")
-        if db.query(PlatformConfig).count() == 0:
-            for k, v in [
-                ("PLATFORM_ROOM_FEE_PERCENT", str(economic_config.PLATFORM_ROOM_FEE_PERCENT)),
-                ("MINIMUM_ROOM_PRICE", str(economic_config.MINIMUM_ROOM_PRICE)),
-            ]:
-                db.add(PlatformConfig(key=k, value=v))
-            db.commit()
-    finally:
-        db.close()
+        init_db()
+        db = next(get_db())
+        try:
+            if db.query(User).count() == 0:
+                admin_password = os.getenv("ADMIN_PASSWORD", "change-me-now")
+                admin = User(
+                    username=os.getenv("ADMIN_USERNAME", "admin"),
+                    hashed_password=get_password_hash(admin_password),
+                    display_name="Platform Admin",
+                    is_admin=True,
+                    language="en",
+                )
+                db.add(admin)
+                db.commit()
+                print("Seeded admin user")
+            if db.query(PlatformConfig).count() == 0:
+                for k, v in [
+                    ("PLATFORM_ROOM_FEE_PERCENT", str(economic_config.PLATFORM_ROOM_FEE_PERCENT)),
+                    ("MINIMUM_ROOM_PRICE", str(economic_config.MINIMUM_ROOM_PRICE)),
+                ]:
+                    db.add(PlatformConfig(key=k, value=v))
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        # Log but do not kill the serverless function at import/startup
+        print(f"[veyra] startup warning: {e}")
     yield
 
 app = FastAPI(title="Veyra", version="0.1.0", lifespan=lifespan)
@@ -66,7 +71,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
-templates = Jinja2Templates(directory="templates")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 class ConnectionManager:
     def __init__(self):
@@ -599,6 +605,11 @@ async def force_confirm(payment_id: int, user: User = Depends(require_admin), db
     return {"status": "confirmed"}
 
 # Pages
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "service": "veyra"}
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
