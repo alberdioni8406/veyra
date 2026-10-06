@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Login — Multiverse{% endblock %}
+{% block title %}Login — Veyra{% endblock %}
 {% block content %}
 <div class="max-w-sm mx-auto mt-8">
-  <h1 class="text-xl font-bold mb-6 text-center">Enter the Multiverse</h1>
+  <h1 class="text-xl font-bold mb-6 text-center">Enter the Veyra</h1>
   <div class="flex gap-2 mb-6">
     <button id="tab-login" class="flex-1 py-2 text-sm font-medium border-b-2 border-neon text-neon">Login</button>
     <button id="tab-register" class="flex-1 py-2 text-sm font-medium border-b-2 border-transparent text-muted">Register</button>
@@ -25,7 +25,7 @@
     <button type="submit" class="w-full btn-neon py-2.5 rounded-lg text-neon font-semibold text-sm">Continue</button>
     <p id="auth-error" class="text-center text-red-400 text-xs"></p>
   </form>
-  <p class="text-center text-muted text-xs mt-6">Default admin: admin / admin123</p>
+  <p class="text-center text-muted text-xs mt-6">First admin is created from ADMIN_USERNAME / ADMIN_PASSWORD env vars</p>
 </div>
 {% endblock %}
 {% block scripts %}

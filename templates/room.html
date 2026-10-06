@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Room — Multiverse{% endblock %}
+{% block title %}Room — Veyra{% endblock %}
 {% block content %}
 <div id="room-app" class="flex flex-col h-[calc(100vh-3.5rem-3rem)] max-h-[900px]">
   <div id="room-header" class="shrink-0 border-b border-white/5 pb-3 mb-3">
@@ -27,6 +27,7 @@
           <div class="break-all">Address: <span id="entry-address" class="text-xs"></span></div>
         </div>
         <button id="entry-verify" class="w-full mt-3 btn-pink py-2 rounded text-neonpink text-sm">Verify Payment</button>
+        <p id="entry-status" class="text-xs text-muted mt-2 text-center"></p>
       </div>
     </div>
   </div>
@@ -46,22 +47,27 @@
 const roomId = {{ room_id }};
 let roomData = null;
 let entryPaymentId = null;
-let ws = null;
 let countdownTimer = null;
+let pollTimer = null;
+let lastMessageId = 0;
 
 async function loadRoom() {
   try {
     roomData = await api('/api/rooms/' + roomId);
     document.getElementById('room-name').textContent = roomData.name;
-    document.getElementById('room-meta').textContent = `${roomData.category} · @${roomData.host_username || '?'} · ${roomData.language}`;
-    document.getElementById('room-capacity').textContent = `${roomData.participant_count} / ${roomData.capacity}`;
+    document.getElementById('room-meta').textContent =
+      `${roomData.category} · @${roomData.host_username || '?'} · ${roomData.language}`;
+    document.getElementById('room-capacity').textContent =
+      `${roomData.participant_count} / ${roomData.capacity}`;
     startCountdown(roomData.time_remaining_seconds);
 
     const actions = document.getElementById('room-actions');
     actions.innerHTML = '';
     if (roomData.is_host) {
-      actions.innerHTML += `<button onclick="closeRoom()" class="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400">Close Room</button>`;
-      actions.innerHTML += `<a href="#dashboard" onclick="showDashboard()" class="text-xs px-2 py-1 rounded border border-white/10 text-gray-400">Dashboard</a>`;
+      actions.innerHTML +=
+        `<button onclick="closeRoom()" class="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400">Close Room</button>`;
+      actions.innerHTML +=
+        `<button onclick="showDashboard()" class="text-xs px-2 py-1 rounded border border-white/10 text-gray-400">Dashboard</button>`;
     }
     if (roomData.is_participant || roomData.is_host) {
       showChat();
@@ -80,7 +86,11 @@ function startCountdown(sec) {
   const el = document.getElementById('room-countdown');
   const tick = () => {
     el.textContent = fmtTime(s) + ' left';
-    if (s <= 0) { clearInterval(countdownTimer); el.textContent = 'ENDED'; return; }
+    if (s <= 0) {
+      clearInterval(countdownTimer);
+      el.textContent = 'ENDED';
+      return;
+    }
     s--;
   };
   tick();
@@ -92,7 +102,8 @@ function showJoin() {
   document.getElementById('chat-panel').classList.add('hidden');
   const msg = document.getElementById('join-msg');
   if (roomData.entry_price > 0) {
-    msg.textContent = `Entry: ${fmtBch(roomData.entry_price)}. Capacity ${roomData.participant_count}/${roomData.capacity}.`;
+    msg.textContent =
+      `Entry: ${fmtBch(roomData.entry_price)}. Capacity ${roomData.participant_count}/${roomData.capacity}.`;
   } else {
     msg.textContent = 'This room is free to enter.';
   }
@@ -101,12 +112,17 @@ function showJoin() {
 function showChat() {
   document.getElementById('join-panel').classList.add('hidden');
   document.getElementById('chat-panel').classList.remove('hidden');
-  loadMessages();
-  connectWs();
+  loadMessages(true);
+  // Poll for new messages every 2.5s (Vercel-friendly, no WebSockets required)
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => loadMessages(false), 2500);
 }
 
 document.getElementById('join-btn').addEventListener('click', async () => {
-  if (!getToken()) { location.href = '/login?next=/room/' + roomId; return; }
+  if (!getToken()) {
+    location.href = '/login?next=/room/' + roomId;
+    return;
+  }
   try {
     const res = await api('/api/rooms/' + roomId + '/join', { method: 'POST' });
     if (res.status === 'joined' || res.status === 'already_joined') {
@@ -120,39 +136,56 @@ document.getElementById('join-btn').addEventListener('click', async () => {
       document.getElementById('entry-address').textContent = res.payment.address;
       document.getElementById('join-btn').classList.add('hidden');
     }
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    alert(e.message);
+  }
 });
 
 document.getElementById('entry-verify').addEventListener('click', async () => {
+  const status = document.getElementById('entry-status');
+  status.textContent = 'Verifying...';
   try {
     await api('/api/payments/' + entryPaymentId + '/verify', { method: 'POST' });
-    const res = await api('/api/rooms/' + roomId + '/confirm-entry?payment_id=' + entryPaymentId, { method: 'POST' });
-    // note: confirm-entry expects payment_id as query in this impl? Wait, fix in call
-  } catch(e) {}
-  // Correct call:
-  try {
-    const res = await api('/api/rooms/' + roomId + '/confirm-entry?payment_id=' + entryPaymentId, { method: 'POST' });
-    if (res.status === 'joined') {
+    const res = await api(
+      '/api/rooms/' + roomId + '/confirm-entry?payment_id=' + entryPaymentId,
+      { method: 'POST' }
+    );
+    if (res.status === 'joined' || res.status === 'already_joined') {
+      status.textContent = 'Joined!';
       roomData.is_participant = true;
       showChat();
+    } else {
+      status.textContent = 'Payment still pending. Try again in a few seconds.';
     }
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    status.textContent = e.message;
+  }
 });
 
-// Fix: confirm-entry uses query param in path? Looking at code: payment_id as arg, so query is fine if FastAPI accepts.
-// In main: async def confirm_entry(room_id: int, payment_id: int ... so yes query or body. Query works.
-
-async function loadMessages() {
+async function loadMessages(full = false) {
   try {
     const msgs = await api('/api/rooms/' + roomId + '/messages');
     const el = document.getElementById('messages');
+    if (!msgs || !msgs.length) {
+      if (full) el.innerHTML = '<p class="text-muted text-xs">No messages yet. Say hello.</p>';
+      return;
+    }
+    const newestId = msgs[msgs.length - 1].id;
+    if (!full && newestId === lastMessageId) return; // nothing new
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     el.innerHTML = msgs.map(m => renderMsg(m)).join('');
-    el.scrollTop = el.scrollHeight;
-  } catch (e) {}
+    lastMessageId = newestId;
+    if (full || atBottom) el.scrollTop = el.scrollHeight;
+  } catch (e) {
+    /* ignore transient errors while polling */
+  }
 }
 
 function renderMsg(m) {
-  const time = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const time = new Date(m.created_at).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   return `<div class="flex gap-2">
     <span class="text-neon font-mono text-xs shrink-0 w-20 truncate">@${esc(m.username)}</span>
     <span class="flex-1 break-words">${esc(m.content)}</span>
@@ -160,7 +193,11 @@ function renderMsg(m) {
   </div>`;
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
 
 document.getElementById('msg-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -169,25 +206,15 @@ document.getElementById('msg-form').addEventListener('submit', async (e) => {
   if (!content) return;
   input.value = '';
   try {
-    await api('/api/rooms/' + roomId + '/messages', { method: 'POST', body: JSON.stringify({ content }) });
-  } catch (err) { alert(err.message); }
+    await api('/api/rooms/' + roomId + '/messages', {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    await loadMessages(true);
+  } catch (err) {
+    alert(err.message);
+  }
 });
-
-function connectWs() {
-  const token = getToken();
-  if (!token) return;
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/rooms/${roomId}?token=${token}`);
-  ws.onmessage = (ev) => {
-    const data = JSON.parse(ev.data);
-    if (data.type === 'message') {
-      const el = document.getElementById('messages');
-      el.insertAdjacentHTML('beforeend', renderMsg(data));
-      el.scrollTop = el.scrollHeight;
-    }
-  };
-  ws.onclose = () => { setTimeout(connectWs, 3000); };
-}
 
 async function closeRoom() {
   if (!confirm('Close this room for everyone?')) return;
@@ -198,8 +225,12 @@ async function closeRoom() {
 async function showDashboard() {
   try {
     const d = await api('/api/rooms/' + roomId + '/dashboard');
-    alert(`Participants: ${d.participants.length}\nRevenue: ${fmtBch(d.revenue)}\nMessages: ${d.messages}`);
-  } catch (e) { alert(e.message); }
+    alert(
+      `Participants: ${d.participants.length}\nRevenue: ${fmtBch(d.revenue)}\nMessages: ${d.messages}`
+    );
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 loadRoom();
